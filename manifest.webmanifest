@@ -1,0 +1,28 @@
+{
+  "name": "Taxi Murcia",
+  "short_name": "Taxi Murcia",
+  "description": "Aplicación de Taxi Murcia para clientes, taxistas y administración.",
+  "lang": "es-ES",
+  "dir": "ltr",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#f5f8f7",
+  "theme_color": "#12a77a",
+  "categories": ["navigation", "business", "transportation"],
+  "icons": [
+    {
+      "src": "icon-192.svg",
+      "sizes": "192x192",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "icon-512.svg",
+      "sizes": "512x512",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
