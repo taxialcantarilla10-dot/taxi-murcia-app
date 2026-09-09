@@ -1,0 +1,21 @@
+name: Deploy Supabase Edge Function
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'supabase/functions/whatsapp-webhook/**'
+      - '.github/workflows/deploy-supabase-function.yml'
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: supabase/setup-cli@v1
+        with:
+          version: latest
+      - name: Deploy function
+        run: supabase functions deploy whatsapp-webhook --project-ref cnajheurgieenmpvngpl --no-verify-jwt
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
