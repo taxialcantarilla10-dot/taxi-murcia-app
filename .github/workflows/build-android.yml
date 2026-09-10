@@ -1,10 +1,10 @@
 name: Build Android APK
 
 on:
-  workflow_dispatch:
   push:
     branches:
       - main
+  workflow_dispatch:
 
 jobs:
   build:
@@ -15,18 +15,30 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Preparar Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v5
         with:
           node-version: 22
 
       - name: Preparar Java
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: '21'
 
       - name: Instalar dependencias
         run: npm install
+
+      - name: Preparar archivos web
+        run: |
+          mkdir -p www
+          cp index.html www/
+          cp leaflet.css www/
+          cp leaflet.js www/
+          cp manifest.webmanifest www/
+          cp supabase.min.js www/
+          cp sw.js www/
+          cp icon-192.svg www/
+          cp icon-512.svg www/
 
       - name: Crear proyecto Android
         run: npx cap add android
