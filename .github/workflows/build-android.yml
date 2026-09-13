@@ -2,57 +2,45 @@ name: Build Android APK
 
 on:
   push:
-    branches:
-      - main
+    branches: [main]
+    paths:
+      - '**'
+      - '!supabase/**'
   workflow_dispatch:
 
 jobs:
   build:
     runs-on: ubuntu-latest
-
     steps:
-      - name: Descargar código
+      - name: Checkout
         uses: actions/checkout@v4
-
-      - name: Preparar Node.js
+      - name: Setup Node.js
         uses: actions/setup-node@v5
         with:
           node-version: 22
-
-      - name: Preparar Java
+      - name: Setup Java
         uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: '21'
-
-      - name: Instalar dependencias
+      - name: Install dependencies
         run: npm install
-
-      - name: Preparar archivos web
+      - name: Prepare web assets
         run: |
           mkdir -p www
-          cp index.html www/
-          cp leaflet.css www/
-          cp leaflet.js www/
-          cp manifest.webmanifest www/
-          cp supabase.min.js www/
-          cp sw.js www/
-          cp icon-192.svg www/
-          cp icon-512.svg www/
-
-      - name: Crear proyecto Android
+          cp index.html leaflet.css leaflet.js manifest.webmanifest supabase.min.js sw.js icon-192.svg icon-512.svg www/
+      - name: Create Android project
         run: npx cap add android
-
-      - name: Sincronizar Capacitor
+      - name: Apply native Taxi Murcia Android layer
+        run: python3 scripts/patch-android.py
+      - name: Synchronize Capacitor
         run: npx cap sync android
-
-      - name: Compilar APK de prueba
+      - name: Build debug APK
         working-directory: android
         run: |
           chmod +x gradlew
           ./gradlew assembleDebug
-
-      - name: Guardar APK
+      - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: taxi-murcia-debug-apk
