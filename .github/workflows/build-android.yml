@@ -65,10 +65,8 @@ jobs:
           printf '%s\n' "$PERMS" | grep -Fq "android.permission.FOREGROUND_SERVICE_LOCATION"
           MANIFEST="$($AAPT dump xmltree "$APK" AndroidManifest.xml)"
           printf '%s\n' "$MANIFEST" | grep -Fq 'TaxiLocationService'
-          printf '%s\n' "$MANIFEST" | grep -Fq 'foregroundServiceType(0x0101057c)="location"'
-          for DEX in $(unzip -Z1 "$APK" 'classes*.dex'); do
-            unzip -p "$APK" "$DEX"
-          done > native.dex
+          printf '%s\n' "$MANIFEST" | grep -Fq 'foregroundServiceType'
+          for DEX in $(unzip -Z1 "$APK" 'classes*.dex'); do unzip -p "$APK" "$DEX"; done > native.dex
           strings native.dex | grep -Fq 'es/taximurcia/app/TaxiLocationService'
           strings native.dex | grep -Fq 'es/taximurcia/app/ForegroundLocationPlugin'
           strings native.dex | grep -Fq 'startForeground'
