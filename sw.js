@@ -1,4 +1,4 @@
-const CACHE = 'taxi-murcia-shell-v1';
+const CACHE = 'taxi-murcia-shell-v2';
 const SHELL = [
   './',
   './index.html',
