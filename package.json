@@ -1,1 +1,1 @@
-{"name":"taxi-murcia-app","version":"1.0.0","private":true,"scripts":{"build":"echo static-assets"},"dependencies":{"@capacitor/android":"^7.4.0","@capacitor/core":"^7.4.0"},"devDependencies":{"@capacitor/cli":"^7.4.0"}}
+{"name":"taxi-murcia-app","version":"1.0.0","private":true,"scripts":{"build":"echo static-assets"},"dependencies":{"@capacitor/android":"^7.4.0","@capacitor/core":"^7.4.0"},"devDependencies":{"@capacitor/cli":"^7.4.0","typescript":"^5.6.3"}}
