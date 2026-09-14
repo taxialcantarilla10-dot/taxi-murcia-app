@@ -1,5 +1,4 @@
 name: Build Android APK
-
 on:
   push:
     branches: [main]
@@ -7,7 +6,6 @@ on:
       - '**'
       - '!supabase/**'
   workflow_dispatch:
-
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -61,8 +59,8 @@ jobs:
           AAPT=$(find "$ANDROID_HOME/build-tools" -type f -name aapt | sort -V | tail -1)
           test -x "$AAPT"
           PERMS="$($AAPT dump permissions "$APK")"
-          printf '%s\n' "$PERMS" | grep -Fq "android.permission.ACCESS_BACKGROUND_LOCATION"
-          printf '%s\n' "$PERMS" | grep -Fq "android.permission.FOREGROUND_SERVICE_LOCATION"
+          printf '%s\n' "$PERMS" | grep -Fq 'android.permission.ACCESS_BACKGROUND_LOCATION'
+          printf '%s\n' "$PERMS" | grep -Fq 'android.permission.FOREGROUND_SERVICE_LOCATION'
           MANIFEST="$($AAPT dump xmltree "$APK" AndroidManifest.xml)"
           printf '%s\n' "$MANIFEST" | grep -Fq 'TaxiLocationService'
           printf '%s\n' "$MANIFEST" | grep -Fq 'foregroundServiceType'
