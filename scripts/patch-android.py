@@ -9,6 +9,7 @@ import android.Manifest;
 import android.app.*;
 import android.content.*;
 import android.content.pm.PackageManager;
+import android.content.pm.ServiceInfo;
 import android.location.*;
 import android.os.*;
 import androidx.core.app.NotificationCompat;
@@ -34,6 +35,9 @@ public class TaxiLocationService extends Service implements LocationListener {
     private String url, key, token, driverId;
     private long lastPublished;
     private boolean locationRequested;
+    private PowerManager.WakeLock wakeLock;
+    private long locationCount;
+    private String lastError = "iniciando";
     private final Runnable publishLoop = new Runnable() { public void run() {
         if (!publishing) publishLocation();
         handler.postDelayed(this, busy ? 5000L : 20000L);
@@ -41,13 +45,16 @@ public class TaxiLocationService extends Service implements LocationListener {
 
     @Override public void onCreate() {
         super.onCreate(); loadAuth(); createChannel();
-        Notification n = new NotificationCompat.Builder(this, CHANNEL)
-            .setContentTitle("Taxi Murcia").setContentText("Seguimiento GPS activo durante el turno")
-            .setSmallIcon(android.R.drawable.ic_menu_mylocation).setOngoing(true)
-            .setCategory(NotificationCompat.CATEGORY_SERVICE).build();
-        if (Build.VERSION.SDK_INT >= 29) startForeground(NOTIFICATION_ID, n, 8); else startForeground(NOTIFICATION_ID, n);
+        PowerManager pm=(PowerManager)getSystemService(POWER_SERVICE);
+        if(pm!=null){ wakeLock=pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK,"TaxiMurcia:Location"); wakeLock.setReferenceCounted(false); wakeLock.acquire(); }
+        // startForeground is deliberately the first operational action, before location requests.
+        updateNotification("Iniciando GPS · esperando permiso");
+        if (Build.VERSION.SDK_INT >= 29) startForeground(NOTIFICATION_ID, buildNotification("Iniciando GPS · esperando permiso"), ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION); else startForeground(NOTIFICATION_ID, buildNotification("Iniciando GPS · esperando permiso"));
         startUpdates(); handler.post(publishLoop);
     }
+    private Notification buildNotification(String text){ return new NotificationCompat.Builder(this, CHANNEL).setContentTitle("Taxi Murcia · GPS").setContentText(text).setSmallIcon(android.R.drawable.ic_menu_mylocation).setOngoing(true).setCategory(NotificationCompat.CATEGORY_SERVICE).setOnlyAlertOnce(true).build(); }
+    private void updateNotification(String text){ try{ ((NotificationManager)getSystemService(NOTIFICATION_SERVICE)).notify(NOTIFICATION_ID,buildNotification(text)); }catch(Exception ignored){} }
+    private void diagnostic(String text){ lastError=text; updateNotification(text+" · ubicaciones "+locationCount); }
     private void loadAuth() { android.content.SharedPreferences p=getSharedPreferences("location_auth", MODE_PRIVATE); url=p.getString(EXTRA_URL, null); key=p.getString(EXTRA_KEY, null); token=p.getString(EXTRA_TOKEN, null); driverId=p.getString(EXTRA_DRIVER, null); }
     public void updateAuth(Intent i) { if(i==null)return; url=i.getStringExtra(EXTRA_URL); key=i.getStringExtra(EXTRA_KEY); token=i.getStringExtra(EXTRA_TOKEN); driverId=i.getStringExtra(EXTRA_DRIVER); getSharedPreferences("location_auth", MODE_PRIVATE).edit().putString(EXTRA_URL,url).putString(EXTRA_KEY,key).putString(EXTRA_TOKEN,token).putString(EXTRA_DRIVER,driverId).apply(); startUpdates(); publishLocation(); }
     private void createChannel() { if(Build.VERSION.SDK_INT>=26){ NotificationChannel c=new NotificationChannel(CHANNEL,"Seguimiento GPS",NotificationManager.IMPORTANCE_LOW); c.setDescription("Ubicación activa del taxi"); getSystemService(NotificationManager.class).createNotificationChannel(c); } }
@@ -56,15 +63,17 @@ public class TaxiLocationService extends Service implements LocationListener {
             // The WebView may start the service while Android's permission dialog is still open.
             // Do not give up permanently: retry after the user grants foreground location.
             if (!locationRequested) { locationRequested=true; handler.postDelayed(() -> { locationRequested=false; startUpdates(); }, 2000L); }
-            return;
+            diagnostic("Permiso de ubicación pendiente"); return;
         }
         locationRequested=false;
         locationManager=(LocationManager)getSystemService(Context.LOCATION_SERVICE);
-        try { locationManager.requestLocationUpdates(LocationManager.GPS_PROVIDER, 1000L, 0f, this, Looper.getMainLooper()); } catch(Exception ignored) {}
-        try { locationManager.requestLocationUpdates(LocationManager.NETWORK_PROVIDER, 5000L, 0f, this, Looper.getMainLooper()); } catch(Exception ignored) {}
+        boolean registered=false;
+        try { locationManager.requestLocationUpdates(LocationManager.GPS_PROVIDER, 1000L, 0f, this, Looper.getMainLooper()); registered=true; } catch(Exception e){ diagnostic("GPS provider: "+e.getClass().getSimpleName()); }
+        try { locationManager.requestLocationUpdates(LocationManager.NETWORK_PROVIDER, 5000L, 0f, this, Looper.getMainLooper()); registered=true; } catch(Exception e){ diagnostic("Red provider: "+e.getClass().getSimpleName()); }
+        if(registered) diagnostic("GPS escuchando · pantalla apagada compatible"); else diagnostic("Sin proveedor de ubicación");
         try { Location l=locationManager.getLastKnownLocation(LocationManager.GPS_PROVIDER); if(l!=null)lastLocation=l; } catch(Exception ignored) {}
     }
-    @Override public void onLocationChanged(Location l) { if(l!=null) lastLocation=l; }
+    @Override public void onLocationChanged(Location l) { if(l!=null){ lastLocation=l; locationCount++; diagnostic("GPS recibido "+String.format(java.util.Locale.US,"%.5f,%.5f",l.getLatitude(),l.getLongitude())); } }
     private void publishLocation() {
         if(lastLocation==null || token==null || driverId==null || url==null || publishing)return;
         final Location l=new Location(lastLocation); final long now=System.currentTimeMillis();
@@ -78,14 +87,15 @@ public class TaxiLocationService extends Service implements LocationListener {
             JSONObject driverPayload=new JSONObject(d.toString()); driverPayload.remove("driver_id");
             driverPayload.put("location_updated_at",driverPayload.getString("updated_at"));
             request("PATCH", url+"/rest/v1/drivers?id=eq."+URLEncoder.encode(driverId,"UTF-8"), driverPayload.toString(), null);
-            lastPublished=now;
-        } catch(Exception ignored) {} finally { publishing=false; }});
+            lastPublished=now; diagnostic("Publicado "+String.format(java.util.Locale.US,"%.5f,%.5f",l.getLatitude(),l.getLongitude()));
+        } catch(Exception e) { diagnostic("Error publicando: "+e.getClass().getSimpleName()); } finally { publishing=false; }});
     }
     private boolean hasActiveService() { try { String out=request("GET",url+"/rest/v1/services?select=id&driver_id=eq."+URLEncoder.encode(driverId,"UTF-8")+"&status=in.(accepted,arriving,arrived,picked_up)&limit=1",null,null); return out!=null && out.trim().length()>2 && !out.trim().equals("[]"); } catch(Exception e){ return busy; } }
     private String request(String method,String endpoint,String body,String prefer) throws Exception { HttpURLConnection c=(HttpURLConnection)new URL(endpoint).openConnection(); c.setRequestMethod(method); c.setRequestProperty("apikey",key); c.setRequestProperty("Authorization","Bearer "+token); c.setRequestProperty("Content-Type","application/json"); if(prefer!=null)c.setRequestProperty("Prefer",prefer); c.setConnectTimeout(10000);c.setReadTimeout(10000); if(body!=null){c.setDoOutput(true);try(OutputStream o=c.getOutputStream()){o.write(body.getBytes(StandardCharsets.UTF_8));}} int code=c.getResponseCode(); InputStream in=code>=400?c.getErrorStream():c.getInputStream(); if(in==null)return ""; try(BufferedReader r=new BufferedReader(new InputStreamReader(in,StandardCharsets.UTF_8))){StringBuilder s=new StringBuilder();String x;while((x=r.readLine())!=null)s.append(x);return code>=400?null:s.toString();} finally {c.disconnect();} }
     @Override public void onProviderEnabled(String p){} @Override public void onProviderDisabled(String p){} @Override public void onStatusChanged(String p,int s,Bundle b){}
     @Override public int onStartCommand(Intent i,int flags,int id){ if(i!=null && ACTION_UPDATE_AUTH.equals(i.getAction()))updateAuth(i); return START_STICKY; }
-    @Override public void onDestroy(){publishing=false;handler.removeCallbacks(publishLoop);if(locationManager!=null)locationManager.removeUpdates(this);io.shutdownNow();super.onDestroy();}
+    @Override public void onDestroy(){publishing=false;handler.removeCallbacks(publishLoop);if(locationManager!=null)locationManager.removeUpdates(this);io.shutdownNow();if(wakeLock!=null&&wakeLock.isHeld())wakeLock.release();super.onDestroy();}
+    @Override public void onTaskRemoved(Intent rootIntent){ /* service remains independent of the WebView task */ super.onTaskRemoved(rootIntent); }
     @Override public IBinder onBind(Intent i){return null;}
 }
 ''')
@@ -114,7 +124,15 @@ public class ForegroundLocationPlugin extends Plugin {
 ''')
 manifest=root/'AndroidManifest.xml'; s=manifest.read_text()
 if 'android.permission.ACCESS_FINE_LOCATION' not in s:
- s=s.replace('<application','<uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />\n    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />\n    <uses-permission android:name="android.permission.ACCESS_BACKGROUND_LOCATION" />\n    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />\n    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION" />\n    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />\n    <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />\n    <application',1)
+ s=s.replace('<application','''<uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_BACKGROUND_LOCATION" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <application''',1)
 if 'TaxiLocationService' not in s:s=s.replace('</application>','<service android:name=".TaxiLocationService" android:exported="false" android:foregroundServiceType="location" />\n    </application>')
 manifest.write_text(s)
 main=pkg/'MainActivity.java'; s=main.read_text()
