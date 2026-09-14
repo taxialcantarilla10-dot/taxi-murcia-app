@@ -52,10 +52,28 @@ jobs:
           ./gradlew assembleDebug
       - name: Verify APK contains native layer
         working-directory: android
+        shell: bash
         run: |
-          unzip -l app/build/outputs/apk/debug/app-debug.apk | grep -q 'classes.dex'
-          $ANDROID_HOME/build-tools/$(ls $ANDROID_HOME/build-tools | tail -1)/apkanalyzer manifest permissions app/build/outputs/apk/debug/app-debug.apk | grep -q 'android.permission.ACCESS_BACKGROUND_LOCATION'
-          $ANDROID_HOME/build-tools/$(ls $ANDROID_HOME/build-tools | tail -1)/apkanalyzer manifest permissions app/build/outputs/apk/debug/app-debug.apk | grep -q 'android.permission.FOREGROUND_SERVICE_LOCATION'
+          set -euo pipefail
+          APK=app/build/outputs/apk/debug/app-debug.apk
+          test -s "$APK"
+          unzip -l "$APK" | grep -q 'classes.dex'
+          AAPT=$(find "$ANDROID_HOME/build-tools" -type f -name aapt | sort -V | tail -1)
+          test -x "$AAPT"
+          PERMS="$($AAPT dump permissions "$APK")"
+          printf '%s\n' "$PERMS" | grep -Fq "android.permission.ACCESS_BACKGROUND_LOCATION"
+          printf '%s\n' "$PERMS" | grep -Fq "android.permission.FOREGROUND_SERVICE_LOCATION"
+          MANIFEST="$($AAPT dump xmltree "$APK" AndroidManifest.xml)"
+          printf '%s\n' "$MANIFEST" | grep -Fq 'TaxiLocationService'
+          printf '%s\n' "$MANIFEST" | grep -Fq 'foregroundServiceType(0x0101057c)="location"'
+          for DEX in $(unzip -Z1 "$APK" 'classes*.dex'); do
+            unzip -p "$APK" "$DEX"
+          done > native.dex
+          strings native.dex | grep -Fq 'es/taximurcia/app/TaxiLocationService'
+          strings native.dex | grep -Fq 'es/taximurcia/app/ForegroundLocationPlugin'
+          strings native.dex | grep -Fq 'startForeground'
+          strings native.dex | grep -Fq 'requestLocationUpdates'
+          rm -f native.dex
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
